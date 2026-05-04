@@ -1,0 +1,14 @@
+# Datos generados por el pipeline — no se versionan
+data/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Spark temp files
+derby.log
+metastore_db/
+
+# VS Code
+.vscode/
