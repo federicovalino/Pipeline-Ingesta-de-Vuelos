@@ -4,6 +4,27 @@ Pipeline de ingesta y transformación de datos de vuelos en tiempo real sobre el
 
 ---
 
+## Contexto de negocio
+Aeropuertos Uruguay opera los principales aeropuertos del país, incluyendo el 
+Aeropuerto Internacional de Carrasco, Laguna del Sauce y Rivera, entre otros. 
+La gestión eficiente del espacio aéreo requiere visibilidad en tiempo real sobre 
+qué aeronaves están sobrevolando territorio uruguayo, su estado, origen y características.
+
+Este pipeline resuelve ese problema capturando posiciones de vuelo en tiempo real 
+desde OpenSky Network y construyendo una fuente de datos confiable, incremental y 
+enriquecida que permite responder preguntas como:
+
+- ¿Cuántos vuelos están sobrevolando Uruguay en este momento?
+- ¿De qué países provienen las aeronaves?
+- ¿Qué aeronaves están despegando, aterrizando o en vuelo de crucero?
+- ¿Qué fabricante y operador corresponde a cada aeronave identificada?
+
+Los datos procesados en la capa Gold están listos para ser consumidos por 
+herramientas de Business Intelligence como Power BI o Tableau, o por sistemas 
+operativos que requieran información actualizada del espacio aéreo.
+
+---
+
 ## Descripción general
 
 El pipeline consume la API pública de [OpenSky Network](https://opensky-network.org/) para obtener posiciones de aeronaves en tiempo real sobre Uruguay. Los datos se persisten incrementalmente en tres capas Delta Lake y se enriquecen con información de aeronaves mediante un archivo estático.
