@@ -77,6 +77,9 @@ Cada ejecución de `main.py` corre el pipeline completo: ingesta desde la API, p
 
 ### Ejecutar los tests
 
+> **Importante:** los tests asumen que las tablas Delta ya existen en `data/`. 
+> Es necesario correr el pipeline al menos una vez antes de ejecutar los tests.
+
 ```bash
 py -3.11 -m pytest tests/ -v
 ```
