@@ -1,105 +1,91 @@
-# Pipeline de Ingesta de Vuelos — Aeropuertos Uruguay
+# Real-time Flight Ingestion Pipeline — PySpark & Delta Lake
 
-Pipeline de ingesta y transformación de datos de vuelos en tiempo real sobre el espacio aéreo uruguayo, construido con PySpark y Delta Lake siguiendo arquitectura Medallion (Bronze / Silver / Gold).
-
----
-
-## Contexto de negocio
-Aeropuertos Uruguay opera los principales aeropuertos del país, incluyendo el 
-Aeropuerto Internacional de Carrasco, Laguna del Sauce y Rivera, entre otros. 
-La gestión eficiente del espacio aéreo requiere visibilidad en tiempo real sobre 
-qué aeronaves están sobrevolando territorio uruguayo, su estado, origen y características.
-
-Este pipeline resuelve ese problema capturando posiciones de vuelo en tiempo real 
-desde OpenSky Network y construyendo una fuente de datos confiable, incremental y 
-enriquecida que permite responder preguntas como:
-
-- ¿Cuántos vuelos están sobrevolando Uruguay en este momento?
-- ¿De qué países provienen las aeronaves?
-- ¿Qué aeronaves están despegando, aterrizando o en vuelo de crucero?
-- ¿Qué fabricante y operador corresponde a cada aeronave identificada?
-
-Los datos procesados en la capa Gold están listos para ser consumidos por 
-herramientas de Business Intelligence como Power BI o Tableau, o por sistemas 
-operativos que requieran información actualizada del espacio aéreo.
+End-to-end data pipeline for real-time flight tracking, built with PySpark and Delta Lake following a Medallion architecture (Bronze / Silver / Gold).
 
 ---
 
-## Descripción general
+## Overview
 
-El pipeline consume la API pública de [OpenSky Network](https://opensky-network.org/) para obtener posiciones de aeronaves en tiempo real sobre Uruguay. Los datos se persisten incrementalmente en tres capas Delta Lake y se enriquecen con información de aeronaves mediante un archivo estático.
+This pipeline consumes live flight position data from the [OpenSky Network](https://opensky-network.org/) public API and builds a reliable, incremental, and enriched data source that can be consumed by Business Intelligence tools such as Power BI or Tableau, or by any operational system requiring up-to-date airspace information.
+
+The pipeline answers questions such as:
+
+- How many flights are currently active over a given airspace?
+- Which countries do the aircraft originate from?
+- Which aircraft are taking off, landing, or cruising?
+- What manufacturer, model and operator does each identified aircraft belong to?
 
 ---
 
-## Arquitectura
+## Architecture
 
 ```
-API OpenSky
-     ↓
-  Bronze (raw)       → JSON crudo persistido en Delta Lake
-     ↓
-  Silver (clean)     → Tipos correctos, timestamps legibles, flight_status
-     ↓
-  Gold (curated)    → JOIN con aircraftDatabase.csv → fabricante, modelo, operador
+OpenSky Network API
+        ↓
+  Bronze (raw)     → Raw JSON persisted as-is in Delta Lake
+        ↓
+  Silver (clean)   → Correct types, readable timestamps, flight status classification
+        ↓
+  Gold (enriched)  → JOIN with static aircraft dataset → manufacturer, model, operator
 ```
 
 ---
 
-## Estructura del proyecto
+## Project Structure
 
 ```
-proyecto-aeropuertos/
+pipeline-flights/
 ├── src/
-│   ├── spark_session.py       # Inicialización de SparkSession con Delta
-│   ├── ingesta.py             # Llamada a API con retries y backoff exponencial
-│   ├── bronze.py              # Persistencia de datos crudos en Delta
-│   ├── silver.py              # Transformaciones, tipos, flight_status
-│   ├── gold.py                # JOIN con archivo estático
-│   └── checkpoint.py          # Gestión de estado incremental
+│   ├── spark_session.py       # SparkSession initialization with Delta Lake
+│   ├── ingesta.py             # API consumption with retries and exponential backoff
+│   ├── bronze.py              # Raw data persistence in Delta format
+│   ├── silver.py              # Transformations, type casting, flight status logic
+│   ├── gold.py                # JOIN with static dataset
+│   └── checkpoint.py          # Incremental load state management
 ├── static/
-│   └── aircraftDatabase.csv   # Muestra de 199 aeronaves (región + Europa + USA)
+│   └── aircraftDatabase.csv   # 199 aircraft sample (South America, Europe, USA)
 ├── data/
-│   ├── bronze/vuelos/         # Tabla Delta capa Bronze
-│   ├── silver/vuelos/         # Tabla Delta capa Silver
-│   ├── gold/vuelos_enriquecidos/  # Tabla Delta capa Gold
+│   ├── bronze/flights/        # Delta table — Bronze layer
+│   ├── silver/flights/        # Delta table — Silver layer
+│   ├── gold/enriched_flights/ # Delta table — Gold layer
 │   └── checkpoints/
-│       └── estado.json        # Estado de la última ejecución
+│       └── state.json         # Last successful execution state
 ├── tests/
-│   ├── test_duplicados.py
+│   ├── test_duplicates.py
 │   └── test_join.py
-├── main.py                    # Punto de entrada del pipeline
+├── main.py                    # Pipeline entry point
 ├── requirements.txt
 └── README.md
 ```
 
 ---
 
-## Instalación y ejecución
+## Installation & Usage
 
-### Requisitos
+### Requirements
 
 - Python 3.11
-- Java 17 (requerido por Spark)
-- Hadoop winutils (solo Windows)
+- Java 17 (required by Spark)
+- Hadoop winutils (Windows only)
 
-### Instalación de dependencias
+### Install dependencies
 
 ```bash
 py -3.11 -m pip install -r requirements.txt
 ```
 
-### Ejecutar el pipeline
+### Run the pipeline
 
 ```bash
 py -3.11 main.py
 ```
 
-Cada ejecución de `main.py` corre el pipeline completo: ingesta desde la API, persistencia en Bronze, transformación a Silver, enriquecimiento en Gold y actualización del checkpoint.
+Each execution runs the full pipeline: API ingestion, Bronze persistence, Silver transformation, Gold enrichment and checkpoint update.
 
-### Ejecutar los tests
+### Run the tests
 
-> **Importante:** los tests asumen que las tablas Delta ya existen en `data/`. 
-> Es necesario correr el pipeline al menos una vez antes de ejecutar los tests.
+> **Important:** tests assume Delta tables already exist in `data/`.
+> Run the pipeline at least once before executing the test suite.
 
 ```bash
 py -3.11 -m pytest tests/ -v
@@ -107,119 +93,119 @@ py -3.11 -m pytest tests/ -v
 
 ---
 
-## Gestión del estado incremental (Checkpointing)
+## Incremental Load & Checkpointing
 
-Este es el mecanismo central del pipeline para garantizar que cada ejecución procese únicamente los datos nuevos desde la última ejecución exitosa.
+Checkpointing is the core mechanism that ensures each pipeline run processes only new data since the last successful execution.
 
-### Estructura del checkpoint
+### Checkpoint structure
 
-El estado se persiste en `data/checkpoints/estado.json`:
+State is persisted in `data/checkpoints/state.json`:
 
 ```json
 {
-  "ultima_ejecucion": "2026-05-03T22:12:40.134910+00:00",
-  "registros_procesados": 12,
-  "estado": "exitoso"
+  "last_execution": "2026-05-03T22:12:40.134910+00:00",
+  "records_processed": 12,
+  "status": "success"
 }
 ```
 
-### Flujo de cada ejecución
+### Execution flow
 
 ```
-1. Leer checkpoint
+1. Read checkpoint
         ↓
-   ¿Existe y estado = "exitoso"?
-        ↓ Sí                        ↓ No
-   Carga incremental            Carga completa
-   desde ultima_ejecucion       desde el inicio
+   Exists and status = "success"?
+        ↓ Yes                       ↓ No
+   Incremental load             Full load
+   from last_execution          from scratch
         ↓
-2. Llamar a la API (con retries)
+2. Call API (with retries)
         ↓
-3. MERGE en Bronze  →  solo inserta registros nuevos
+3. MERGE into Bronze  →  insert new records only
         ↓
-4. MERGE en Silver  →  inserta o actualiza
+4. MERGE into Silver  →  insert or update
         ↓
-5. MERGE en Gold    →  inserta o actualiza
+5. MERGE into Gold    →  insert or update
         ↓
-6. Guardar checkpoint con estado = "exitoso"
-   ← Solo llega acá si TODO el pipeline completó sin errores
+6. Save checkpoint with status = "success"
+   ← Only reached if the full pipeline completed without errors
 ```
 
-### Garantías del diseño
+### Design guarantees
 
-**Idempotencia** — el pipeline usa MERGE en todas las capas en lugar de append o overwrite. Si la misma ejecución corre dos veces con los mismos datos, el resultado es idéntico — sin duplicados.
+**Idempotency** — the pipeline uses MERGE across all layers instead of append or overwrite. Running the same execution twice produces identical results — no duplicates.
 
-**Checkpoint tardío** — el checkpoint se guarda únicamente después de que todas las capas completaron exitosamente. Si el pipeline falla en Silver o Gold, el checkpoint no avanza y la próxima ejecución reintenta desde el mismo punto.
+**Late checkpoint** — the checkpoint is saved only after all layers complete successfully. If the pipeline fails at Silver or Gold, the checkpoint does not advance and the next run retries from the same point.
 
-**Primera ejecución** — si no existe checkpoint o el archivo está vacío, el pipeline realiza una carga completa sin filtro de fecha.
+**First run** — if no checkpoint exists or the file is empty, the pipeline performs a full load with no date filter.
 
-### Evolución a producción
+### Production evolution
 
-En un entorno productivo el checkpoint en archivo JSON se reemplazaría por una tabla Delta dedicada, lo que permite auditoría completa del historial de ejecuciones y coordinación entre múltiples pipelines.
+In a production environment, the JSON checkpoint would be replaced by a dedicated Delta table, enabling full execution history, auditing and coordination across multiple pipelines.
 
 ---
 
-## Manejo de errores
+## Error Handling
 
-La capa de ingesta implementa reintentos con backoff exponencial:
+The ingestion layer implements retries with exponential backoff:
 
-- Hasta 3 reintentos ante timeout o error de conexión
-- Ante HTTP 429 (rate limiting): espera de 5s → 10s → 20s
-- Si todos los reintentos fallan, el pipeline lanza una excepción y el checkpoint no avanza
+- Up to 3 retries on timeout or connection errors
+- On HTTP 429 (rate limiting): waits 5s → 10s → 20s
+- If all retries fail, the pipeline raises an exception and the checkpoint does not advance
 
 ---
 
-## Transformaciones Silver
+## Silver Transformations
 
-| Campo | Transformación |
+| Field | Transformation |
 |---|---|
-| `time_position` | Unix epoch (Long) → Timestamp legible |
-| `last_contact` | Unix epoch (Long) → Timestamp legible |
-| `timestamp_api` | Unix epoch (Long) → Timestamp legible |
-| `baro_altitude` | Redondeado a 2 decimales |
-| `velocity` | Redondeado a 2 decimales |
-| `longitude / latitude` | Redondeados a 4 decimales |
-| `callsign` | Null → "DESCONOCIDO" |
-| `flight_status` | Clasificación: `en_vuelo` / `en_tierra` / `despegando_o_aterrizando` |
+| `time_position` | Unix epoch (Long) → Readable timestamp |
+| `last_contact` | Unix epoch (Long) → Readable timestamp |
+| `timestamp_api` | Unix epoch (Long) → Readable timestamp |
+| `baro_altitude` | Rounded to 2 decimal places |
+| `velocity` | Rounded to 2 decimal places |
+| `longitude / latitude` | Rounded to 4 decimal places |
+| `callsign` | Null → "UNKNOWN" |
+| `flight_status` | Classification: `in_flight` / `on_ground` / `taking_off_or_landing` |
 
 ---
 
 ## Schema Evolution
 
-Todas las capas se escriben con `mergeSchema: true`. Si la API agrega nuevos campos en el futuro, el pipeline los absorbe automáticamente sin romper las tablas existentes ni requerir migraciones manuales.
+All layers are written with `mergeSchema: true`. If the API adds new fields in the future, the pipeline absorbs them automatically without breaking existing tables or requiring manual migrations.
 
 ---
 
-## Enriquecimiento en Gold
+## Gold Enrichment
 
-El JOIN en Gold conecta cada vuelo con su aeronave mediante `icao24` — el identificador único físico del avión, equivalente a una patente.
+The JOIN in Gold connects each flight to its aircraft using `icao24` — the unique physical identifier of the aircraft, equivalent to a license plate.
 
-**Fuente estática:** `aircraftDatabase.csv` — muestra de 199 aeronaves de aerolíneas de Sudamérica, Europa y USA con rutas relevantes hacia Uruguay (LATAM, Flybondi, Iberia, Air Europa, KLM, Delta, American, entre otras).
+**Static source:** `aircraftDatabase.csv` — a sample of 199 aircraft from airlines in South America, Europe and USA (LATAM, Flybondi, Iberia, Air Europa, KLM, Delta, American, among others).
 
-**En producción** se usaría la base completa de OpenSky (~520k registros), aumentando significativamente la tasa de match del JOIN. La lógica del pipeline es independiente del tamaño del dataset.
+**In production**, the full OpenSky database (~520k records) would be used, significantly increasing the JOIN match rate. The pipeline logic is independent of dataset size.
 
 ---
 
 ## Tests
 
-| Test | Descripción |
+| Test | Description |
 |---|---|
-| `test_bronze_sin_duplicados` | `icao24 + timestamp_api` es único en Bronze |
-| `test_silver_sin_duplicados` | `icao24 + timestamp_api` es único en Silver |
-| `test_gold_sin_duplicados` | `icao24 + timestamp_api` es único en Gold |
-| `test_silver_tiene_registros` | Silver no está vacío tras el pipeline |
-| `test_flight_status_valores_validos` | `flight_status` solo tiene valores esperados |
-| `test_gold_tiene_todos_los_vuelos_de_silver` | El JOIN no pierde ni agrega filas |
-| `test_gold_tiene_columnas_de_enriquecimiento` | Gold tiene las columnas del JOIN |
-| `test_join_no_genera_nulos_en_campos_clave` | Campos de Silver no son null en Gold |
-| `test_gold_icao24_subset_de_silver` | Gold no tiene `icao24` ajenos a Silver |
+| `test_bronze_no_duplicates` | `icao24 + timestamp_api` is unique in Bronze |
+| `test_silver_no_duplicates` | `icao24 + timestamp_api` is unique in Silver |
+| `test_gold_no_duplicates` | `icao24 + timestamp_api` is unique in Gold |
+| `test_silver_has_records` | Silver is not empty after pipeline run |
+| `test_flight_status_valid_values` | `flight_status` only contains expected values |
+| `test_gold_matches_silver_count` | JOIN preserves row count from Silver |
+| `test_gold_has_enrichment_columns` | Gold contains columns from the JOIN |
+| `test_join_no_nulls_on_key_fields` | Silver fields are not null in Gold |
+| `test_gold_icao24_subset_of_silver` | Gold contains no `icao24` values absent from Silver |
 
 ---
 
-## Decisiones técnicas
+## Technical Decisions
 
-**¿Por qué OpenSky?** API pública, sin registro, con datos reales de vuelos sobre Uruguay en tiempo real. Los datos cambian constantemente — ideal para demostrar carga incremental.
+**Why OpenSky?** Free public API, no registration required, real flight data that changes constantly — ideal for demonstrating incremental ingestion.
 
-**¿Por qué archivo JSON para el checkpoint?** Suficiente para el alcance de esta prueba y simple de auditar. En producción se migraría a una tabla Delta dedicada.
+**Why JSON for the checkpoint?** Sufficient for this scope and easy to audit. In production it would be migrated to a dedicated Delta table.
 
-**¿Por qué no Docker?** El foco de la prueba es el pipeline de datos. En producción se containerizaría con una imagen o se desplegaría en Databricks.
+**Why no Docker?** The focus of this project is the data pipeline itself. In production it would be containerized using a `bitnami/spark` base image or deployed on Databricks.
